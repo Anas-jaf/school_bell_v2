@@ -166,3 +166,49 @@ Resets all settings (WiFi, schedule) and restarts ESP32.
 {
   "status": "factory reset. Restarting..."
 }
+
+
+
+
+here is the json 
+
+{
+  "systemName": "نظام صباحي",
+  "schedule": [
+    {
+      "name": "الفترة الأولى",
+      "start": "08:00",
+      "end": "08:45",
+      "ring": "10",
+      "days": "1111100"
+    },
+    {
+      "name": "الفترة الثانية",
+      "start": "08:50",
+      "end": "09:30",
+      "ring": "5-1-5",
+      "days": "1111100"
+    },
+    {
+      "name": "استراحة قصيرة",
+      "start": "09:30",
+      "end": "09:45",
+      "ring": "3",
+      "days": "1111100"
+    },
+    {
+      "name": "الفترة الثالثة",
+      "start": "09:45",
+      "end": "10:30",
+      "ring": "7",
+      "days": "1111100"
+    },
+    {
+      "name": "الفترة الرابعة",
+      "start": "10:35",
+      "end": "11:20",
+      "ring": "10",
+      "days": "1111100"
+    }
+  ]
+}
