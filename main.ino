@@ -412,7 +412,7 @@ void setup() {
   pinMode(RING_PIN, OUTPUT);
   digitalWrite(RING_PIN, LOW);
   // استخدم SDA = GPIO2 (D4), و SCL = GPIO0 (D3)
-  Wire.begin(2, 0);  // Wire.begin(SDA, SCL)
+  Wire.begin(2, 3);
 
   if (!rtc.begin()) {
     Serial.println("Couldn't find RTC");
