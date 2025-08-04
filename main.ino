@@ -20,7 +20,7 @@ bool useStaticIP = false;
 // ملفات التخزين
 const char* scheduleFile = "/schedule.json";
 const char* ringDaysFile = "/ringdays.json";
-unsigned long lastCheckMillis = 0;
+int lastCheckedMinute = -1;
 
 // أيام دق الجرس (7 خانات لكل يوم من الأحد=0 إلى السبت=6)
 bool ringDays[7] = {true,true,true,true,true,false,false};  // افتراضي: الأحد-الخميس مفعلة
@@ -195,30 +195,30 @@ void handleSetTime() {
     return;
   }
 
-  if (!server.hasArg("plain")) {
-    server.send(400, "text/plain", "Body required");
+  if (!server.hasArg("datetime")) {
+    server.send(400, "text/plain", "Missing 'datetime' field");
     return;
   }
 
-  String body = server.arg("plain");
-  Serial.println("Received time: " + body);
+  String datetimeStr = server.arg("datetime");
+  Serial.println("Received datetime: " + datetimeStr);
 
-  if (body.length() < 19) {
+  if (datetimeStr.length() < 19) {
     server.send(400, "text/plain", "Invalid datetime format");
     return;
   }
 
-  int year = body.substring(0,4).toInt();
-  int month = body.substring(5,7).toInt();
-  int day = body.substring(8,10).toInt();
-  int hour = body.substring(11,13).toInt();
-  int minute = body.substring(14,16).toInt();
-  int second = body.substring(17,19).toInt();
+  int year = datetimeStr.substring(0, 4).toInt();
+  int month = datetimeStr.substring(5, 7).toInt();
+  int day = datetimeStr.substring(8, 10).toInt();
+  int hour = datetimeStr.substring(11, 13).toInt();
+  int minute = datetimeStr.substring(14, 16).toInt();
+  int second = datetimeStr.substring(17, 19).toInt();
 
   DateTime dt(year, month, day, hour, minute, second);
   rtc.adjust(dt);
 
-  server.send(200, "text/plain", "RTC time set to " + body);
+  server.send(200, "text/plain", "RTC time set to " + datetimeStr);
 }
 
 void handleSetSchedule() {
@@ -291,12 +291,14 @@ void handleGetRingDays() {
 }
 
 void ringForDuration(unsigned long durationMs) {
+  Serial.println("the bell is ringing");
   digitalWrite(RING_PIN, HIGH);
   delay(durationMs);
   digitalWrite(RING_PIN, LOW);
 }
 
 void ringWithPattern(JsonArray pattern) {
+  Serial.println("ring bell with pattern");
   for (size_t i = 0; i < pattern.size(); i++) {
     int segment = pattern[i].as<int>() * 1000UL; // بالميلي ثانية
     if (i % 2 == 0) {
@@ -342,10 +344,22 @@ void handleRing() {
   }
 }
 
+void handleGetTime() {
+  DateTime now = rtc.now();
+
+  char buf[25];
+  sprintf(buf, "%04d-%02d-%02dT%02d:%02d:%02d", 
+          now.year(), now.month(), now.day(),
+          now.hour(), now.minute(), now.second());
+
+  server.send(200, "application/json", "{\"datetime\":\"" + String(buf) + "\"}");
+}
+
 void setupServer() {
   server.on("/", handleRoot);
   server.on("/configure", HTTP_POST, handleConfigure);
   server.on("/settime", HTTP_POST, handleSetTime);
+  server.on("/getTime", HTTP_GET, handleGetTime);
   server.on("/setSchedule", HTTP_POST, handleSetSchedule);
   server.on("/getSchedule", HTTP_GET, handleGetSchedule);
   server.on("/setRingDays", HTTP_POST, handleSetRingDays);
@@ -355,6 +369,7 @@ void setupServer() {
 }
 
 void parseRingPatternAndRing(String pattern) {
+  Serial.println("ringing the scheduled bell");
   int segments[10]; // دعم حتى 10 أجزاء
   int count = 0;
   char *token = strtok((char *)pattern.c_str(), "-");
@@ -376,32 +391,81 @@ void parseRingPatternAndRing(String pattern) {
   digitalWrite(RING_PIN, LOW);
 }
 
-void checkAndRing() {
-  DateTime now = rtc.now();
-  int currentWeekDay = now.dayOfTheWeek(); // 0=Sunday, 6=Saturday
+void checkAndRing(DateTime now) {
+  Serial.println("🔍 checkAndRing called: " + String(now.hour()) + ":" + String(now.minute()));
+  int currentWeekDay = now.dayOfTheWeek();
+
+  bool ringDays[7] = {false, false, false, false, false, false, false};
+
+  String ringDaysJson = loadStringFromFS(ringDaysFile);
+  StaticJsonDocument<128> ringDoc;
+
+  if (!deserializeJson(ringDoc, ringDaysJson)) {
+    JsonArray arr = ringDoc["activeDays"].as<JsonArray>();
+    for (int i = 0; i < arr.size(); i++) {
+      int dayIndex = arr[i];
+      if (dayIndex >= 0 && dayIndex < 7) {
+        ringDays[dayIndex] = true;
+      }
+    }
+  } else {
+    Serial.println("Failed to parse ringdays.json");
+    return;
+  }
+
+  if (!ringDays[currentWeekDay]) {
+    return;
+  }
 
   String json = loadStringFromFS(scheduleFile);
+
+  // إصلاح السلسلة: إزالة علامات الاقتباس الخارجية إن وجدت
+  if (json.startsWith("\"") && json.endsWith("\"")) {
+    json = json.substring(1, json.length() - 1);
+    json.replace("\\\"", "\"");  // إزالة علامات الهروب
+  }
+
   StaticJsonDocument<2048> doc;
-  if (deserializeJson(doc, json)) return;
+
+  DeserializationError error = deserializeJson(doc, json);
+  if (error) {
+    Serial.print("❌ Failed to parse JSON: ");
+    Serial.println(error.c_str());
+    return;
+  }
+
+  // Serial.println("📄 Schedule content: " + json);
 
   JsonArray schedule = doc["schedule"].as<JsonArray>();
 
+  if (!schedule || schedule.size() == 0) {
+    Serial.println("⚠️ 'schedule' is empty or not found in JSON");
+    return;
+  }
   char currentTimeStr[6];
   sprintf(currentTimeStr, "%02d:%02d", now.hour(), now.minute());
 
   for (JsonObject entry : schedule) {
-    const char* timeStr = entry["start"];
+    const char* startStr = entry["start"];
+    const char* endStr = entry["end"];
     const char* ringStr = entry["ring"];
     const char* daysStr = entry["days"];
 
-    if (strcmp(currentTimeStr, timeStr) == 0) {
-      if (strlen(daysStr) >= 7 && daysStr[currentWeekDay] == '1') {
-        Serial.println("🔔 Matching schedule found, ringing: " + String(ringStr));
-        parseRingPatternAndRing(ringStr);
-        delay(60000); // انتظر دقيقة لمنع التكرار
-        break;
+    if (strlen(daysStr) >= 7 && daysStr[currentWeekDay] == '1') {
+        if (strcmp(currentTimeStr, startStr) == 0) {
+          Serial.println("🔔 Matching schedule (start) found, ringing: " + String(ringStr));
+          parseRingPatternAndRing(ringStr);
+          delay(60000); // ✅ تأخير فقط عند التطابق
+          break;
+        }
+
+        if (strcmp(currentTimeStr, endStr) == 0) {
+          Serial.println("🔕 Matching schedule (end) found, ringing: " + String(ringStr));
+          parseRingPatternAndRing(ringStr);
+          delay(60000); // ✅ تأخير فقط عند التطابق
+          break;
+        }
       }
-    }
   }
 }
 
@@ -441,8 +505,16 @@ void setup() {
 void loop() {
   server.handleClient();
   
-  if (millis() - lastCheckMillis >= 60000) { // كل دقيقة
-    lastCheckMillis = millis();
-    checkAndRing();
+  DateTime now = rtc.now();
+
+  if (now.minute() != lastCheckedMinute) {
+    Serial.print(lastCheckedMinute);
+    Serial.print("⏰ Current Time: ");
+    Serial.print(now.hour());
+    Serial.print(":");
+    Serial.println(now.minute());
+    lastCheckedMinute = now.minute();
+    checkAndRing(now);
   }
+
 }
