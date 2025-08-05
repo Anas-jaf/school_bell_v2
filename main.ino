@@ -1,4 +1,5 @@
 #include <ESP8266WiFi.h>
+#include <ESP8266mDNS.h>
 #include <ESP8266WebServer.h>
 #include <EEPROM.h>
 #include <ArduinoJson.h>
@@ -84,11 +85,23 @@ bool connectToWiFi() {
 
   Serial.print("Connecting to WiFi");
   for (int i = 0; i < 20; i++) {
-    if (WiFi.status() == WL_CONNECTED) return true;
+    if (WiFi.status() == WL_CONNECTED) {
+      Serial.println("\nWiFi connected.");
+      Serial.print("IP address: ");
+      Serial.println(WiFi.localIP());
+      if (MDNS.begin("timer")) {
+        Serial.println("mDNS responder started: http://timer.local");
+      } else {
+        Serial.println("Error setting up MDNS responder!");
+      }
+
+      return true;
+    }
     delay(500);
     Serial.print(".");
   }
-  Serial.println(" failed.");
+
+  Serial.println("\nWiFi connection failed.");
   return false;
 }
 
@@ -504,15 +517,10 @@ void setup() {
 
 void loop() {
   server.handleClient();
-  
+  MDNS.update();
   DateTime now = rtc.now();
 
   if (now.minute() != lastCheckedMinute) {
-    Serial.print(lastCheckedMinute);
-    Serial.print("⏰ Current Time: ");
-    Serial.print(now.hour());
-    Serial.print(":");
-    Serial.println(now.minute());
     lastCheckedMinute = now.minute();
     checkAndRing(now);
   }
