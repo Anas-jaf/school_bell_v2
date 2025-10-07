@@ -22,6 +22,8 @@ bool useStaticIP = false;
 const char* scheduleFile = "/schedule.json";
 const char* ringDaysFile = "/ringdays.json";
 int lastCheckedMinute = -1;
+const char* http_username = "YWRtaW4=";
+const char* http_password = "MTIzNA==";
 
 // أيام دق الجرس (7 خانات لكل يوم من الأحد=0 إلى السبت=6)
 bool ringDays[7] = {true,true,true,true,true,false,false};  // افتراضي: الأحد-الخميس مفعلة
@@ -152,23 +154,74 @@ String loadStringFromFS(const char* filename) {
 // --- Handlers ---
 
 void handleRoot() {
+  
+  if (!server.authenticate(http_username, http_password)) {
+    return server.requestAuthentication(); // تظهر نافذة تسجيل دخول
+  }
+
   server.send(200, "text/html", R"rawliteral(
-      <h1>Configure WiFi</h1>
-      <form action="/configure" method="post">
-        SSID: <input name="ssid"><br>
-        Password: <input name="password" type="password"><br>
-        Use Static IP: <input type="checkbox" name="staticIP" id="staticIP" onchange="toggleIPFields()"><br>
-        <div id="ipFields" style="display:none;">
-          Static IP: <input name="ip0" size="3"> . <input name="ip1" size="3"> . <input name="ip2" size="3"> . <input name="ip3" size="3"><br>
-        </div>
-        <input type="submit" value="Save">
-      </form>
-      <script>
-        function toggleIPFields() {
-          var ipFields = document.getElementById('ipFields');
-          ipFields.style.display = document.getElementById('staticIP').checked ? 'block' : 'none';
-        }
-      </script>
+    <h1>ESP Bell Controller</h1>
+
+    <h2>1️⃣ WiFi Configuration</h2>
+    <form action="/configure" method="post">
+      SSID: <input name="ssid"><br>
+      Password: <input name="password" type="password"><br>
+      Use Static IP: <input type="checkbox" name="staticIP" id="staticIP" onchange="toggleIPFields()"><br>
+      <div id="ipFields" style="display:none;">
+        Static IP: <input name="ip0" size="3"> . <input name="ip1" size="3"> . <input name="ip2" size="3"> . <input name="ip3" size="3"><br>
+      </div>
+      <input type="submit" value="Save WiFi">
+    </form>
+
+    <h2>2️⃣ RTC Time</h2>
+    <input type="datetime-local" id="datetime">
+    <button onclick="setTime()">Set Time</button>
+    <p id="timeResponse"></p>
+    <button onclick="getTime()">Get Current Time</button>
+    <p id="currentTime"></p>
+
+    <h2>3️⃣ Ring the Bell</h2>
+    <button onclick="ringBell(500)">Ring 0.5s</button>
+    <button onclick="ringBell(1000)">Ring 1s</button>
+    <input type="text" id="customDuration" placeholder="Milliseconds">
+    <button onclick="ringCustom()">Ring Custom</button>
+
+    <script>
+      function toggleIPFields() {
+        var ipFields = document.getElementById('ipFields');
+        ipFields.style.display = document.getElementById('staticIP').checked ? 'block' : 'none';
+      }
+
+      function setTime() {
+        var dt = document.getElementById('datetime').value;
+        if (!dt) { alert('Select a date/time'); return; }
+        fetch('/settime', {
+          method: 'POST',
+          headers: {'Content-Type':'application/x-www-form-urlencoded'},
+          body: 'datetime=' + encodeURIComponent(dt)
+        }).then(resp => resp.text()).then(t => document.getElementById('timeResponse').innerText = t);
+      }
+
+      function getTime() {
+        fetch('/getTime').then(resp => resp.json()).then(data => {
+          document.getElementById('currentTime').innerText = data.datetime;
+        });
+      }
+
+      function ringBell(ms) {
+        fetch('/ring', {
+          method:'POST',
+          headers:{'Content-Type':'application/json'},
+          body: JSON.stringify({duration: ms})
+        }).then(resp=>resp.json()).then(d=>alert(JSON.stringify(d)));
+      }
+
+      function ringCustom() {
+        var ms = parseInt(document.getElementById('customDuration').value);
+        if (isNaN(ms) || ms <= 0) { alert('Enter valid ms'); return; }
+        ringBell(ms);
+      }
+    </script>
   )rawliteral");
 }
 
@@ -311,9 +364,9 @@ void ringForDuration(unsigned long durationMs) {
 }
 
 void ringWithPattern(JsonArray pattern) {
-  Serial.println("ring bell with pattern");
+  Serial.println("🔔 Ring bell with pattern (ms)");
   for (size_t i = 0; i < pattern.size(); i++) {
-    int segment = pattern[i].as<int>() * 1000UL; // بالميلي ثانية
+    unsigned long segment = pattern[i].as<unsigned long>(); // الآن هي بالميلي ثانية مباشرة
     if (i % 2 == 0) {
       // تشغيل الجرس
       digitalWrite(RING_PIN, HIGH);
@@ -351,9 +404,11 @@ void handleRing() {
     ringWithPattern(pattern);
     server.send(200, "application/json", "{\"status\":\"Rang bell with pattern\"}");
   } else {
-    int duration = doc["duration"] | 5; // ثواني
-    ringForDuration(duration * 1000UL);
-    server.send(200, "application/json", "{\"status\":\"Rang bell for " + String(duration) + " seconds\"}");
+    int durationMs = doc["duration"] | 500; // default 500 ms
+    ringForDuration(durationMs);
+
+    server.send(200, "application/json",
+                "{\"status\":\"Rang bell for " + String(durationMs) + " ms\"}");
   }
 }
 
