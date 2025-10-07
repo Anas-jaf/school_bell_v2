@@ -1,214 +1,217 @@
-📘 ESP32 SchoolBell – API Documentation
-🌐 Base URL
 
-    STA Mode:
-    http://schoolbell.local/
-    (أو http://<ESP32_IP_ADDRESS>/)
+## 🔔 Bell Controller API Documentation
 
-    AP Mode:
-    http://192.168.4.1/
+### Base URL
 
-🔔 GET /ring
-📄 Description
+```
+http://<device-ip>/
+```
 
-Triggers the bell (activates the relay) for a default duration.
-✅ Response
+Example:
 
+```
+http://192.168.0.159/
+```
+
+---
+
+## 1️⃣ GET `/`
+
+**Description:**
+Returns a basic HTML status or welcome page. (Password protected if authentication is enabled.)
+
+**Response Example:**
+
+```html
+<h1>Bell Controller</h1>
+<p>Status: Ready</p>
+```
+
+---
+
+## 2️⃣ POST `/configure`
+
+**Description:**
+Sets configuration parameters such as WiFi credentials or other system settings.
+
+**Request Body (JSON):**
+
+```json
 {
-  "status": "ringing",
-  "duration_ms": 2000
+  "ssid": "MyWiFi",
+  "password": "MyPass"
 }
+```
 
-🔔 GET /ring?duration=3000
-📄 Description
+**Response:**
 
-Triggers the bell for a custom duration in milliseconds.
-🔸 Query Parameters
+```json
+{ "status": "Configuration saved" }
+```
 
-    duration (optional): Duration in milliseconds (e.g., 2000)
+---
 
-✅ Response
+## 3️⃣ POST `/settime`
 
+**Description:**
+Sets the device’s internal clock.
+
+**Request Body (JSON):**
+
+```json
 {
-  "status": "ringing",
-  "duration_ms": 3000
+  "hour": 10,
+  "minute": 30,
+  "second": 0
 }
+```
 
-🕐 GET /time
-📄 Description
+**Response:**
 
-Returns the current date and time from the RTC.
-✅ Response
+```json
+{ "status": "Time updated", "time": "10:30:00" }
+```
 
+---
+
+## 4️⃣ GET `/getTime`
+
+**Description:**
+Returns the current time stored on the device.
+
+**Response:**
+
+```json
 {
-  "datetime": "2025-08-02T13:45:00",
-  "epoch": 1690974300
+  "hour": 10,
+  "minute": 31,
+  "second": 15
 }
+```
 
-🧭 POST /set-time
-📄 Description
+---
 
-Sets the RTC time.
-🔸 Body (JSON)
+## 5️⃣ POST `/setSchedule`
 
-{
-  "datetime": "2025-08-02T13:45:00"
-}
+**Description:**
+Saves a list of bell schedules (times during the day).
 
-✅ Response
+**Request Body (JSON):**
 
-{
-  "status": "RTC updated",
-  "datetime": "2025-08-02T13:45:00"
-}
-
-📶 GET /status
-📄 Description
-
-Returns WiFi and system status.
-✅ Response
-
-{
-  "mode": "STA",
-  "ip": "192.168.1.55",
-  "ssid": "YourWiFi",
-  "mdns": "http://schoolbell.local"
-}
-
-📥 POST /wifi-config
-📄 Description
-
-Updates the stored WiFi credentials and restarts the ESP32.
-🔸 Body (JSON)
-
-{
-  "ssid": "YourNetwork",
-  "password": "YourPassword"
-}
-
-✅ Response
-
-{
-  "status": "WiFi config saved. Rebooting..."
-}
-
-📁 GET /files
-📄 Description
-
-Lists available files in SPIFFS (e.g., schedules, logs).
-✅ Response
-
-{
-  "files": [
-    "schedule.json",
-    "logs.txt"
-  ]
-}
-
-🗓️ GET /schedule
-📄 Description
-
-Returns the current bell schedule (if stored in SPIFFS).
-✅ Response
-
+```json
 {
   "schedule": [
-    {"time": "08:00", "days": ["Mon", "Tue", "Wed"], "duration": 2000},
-    {"time": "13:00", "days": ["Thu"], "duration": 3000}
+    {"hour": 8, "minute": 0, "duration": 3},
+    {"hour": 9, "minute": 0, "duration": 2}
   ]
 }
+```
 
-🗓️ POST /schedule
-📄 Description
+**Response:**
 
-Updates the bell schedule.
-🔸 Body (JSON)
+```json
+{ "status": "Schedule updated", "count": 2 }
+```
 
+---
+
+## 6️⃣ GET `/getSchedule`
+
+**Description:**
+Returns all stored bell schedule entries.
+
+**Response:**
+
+```json
 {
   "schedule": [
-    {"time": "08:00", "days": ["Mon", "Tue"], "duration": 2000}
+    {"hour": 8, "minute": 0, "duration": 3},
+    {"hour": 9, "minute": 0, "duration": 2}
   ]
 }
+```
 
-✅ Response
+---
 
+## 7️⃣ POST `/setRingDays`
+
+**Description:**
+Defines which days the bell should ring.
+
+**Request Body (JSON):**
+
+```json
 {
-  "status": "Schedule updated"
+  "days": [1, 2, 3, 4, 5]  // 0=Sunday, 6=Saturday
 }
+```
 
-🧪 GET /test
-📄 Description
+**Response:**
 
-Basic test endpoint to check server availability.
-✅ Response
+```json
+{ "status": "Ring days updated" }
+```
 
+---
+
+## 8️⃣ GET `/getRingDays`
+
+**Description:**
+Returns the current active ringing days.
+
+**Response:**
+
+```json
 {
-  "status": "online",
-  "version": "1.0.0"
+  "days": [1, 2, 3, 4, 5]
 }
+```
 
-🛑 GET /reboot
-📄 Description
+---
 
-Triggers a device restart.
-✅ Response
+## 9️⃣ POST `/ring`
 
+**Description:**
+Triggers the bell manually.
+
+### Option 1: Fixed duration
+
+```bash
+curl -X POST http://192.168.0.159/ring -H "Content-Type: application/json" -d '{"duration": 1500}'
+```
+
+**Request Body:**
+
+```json
+{ "duration": 1500 }   // milliseconds
+```
+
+**Response:**
+
+```json
+{ "status": "Rang bell for 1500 ms" }
+```
+
+---
+
+### Option 2: Ring pattern (on/off sequence)
+
+```bash
+curl -X POST http://192.168.0.159/ring -H "Content-Type: application/json" -d '{"ringPattern": [200, 100, 200, 100, 400]}'
+```
+
+**Request Body:**
+
+```json
 {
-  "status": "restarting..."
+  "ringPattern": [200, 100, 200, 100, 400]
 }
+```
 
-🗑️ GET /reset
-📄 Description
+👉 Each number represents milliseconds — alternating between ON and OFF durations.
 
-Resets all settings (WiFi, schedule) and restarts ESP32.
-✅ Response
+**Response:**
 
-{
-  "status": "factory reset. Restarting..."
-}
-
-
-
-
-here is the json 
-
-{
-  "systemName": "نظام صباحي",
-  "schedule": [
-    {
-      "name": "الفترة الأولى",
-      "start": "08:00",
-      "end": "08:45",
-      "ring": "10",
-      "days": "1111100"
-    },
-    {
-      "name": "الفترة الثانية",
-      "start": "08:50",
-      "end": "09:30",
-      "ring": "5-1-5",
-      "days": "1111100"
-    },
-    {
-      "name": "استراحة قصيرة",
-      "start": "09:30",
-      "end": "09:45",
-      "ring": "3",
-      "days": "1111100"
-    },
-    {
-      "name": "الفترة الثالثة",
-      "start": "09:45",
-      "end": "10:30",
-      "ring": "7",
-      "days": "1111100"
-    },
-    {
-      "name": "الفترة الرابعة",
-      "start": "10:35",
-      "end": "11:20",
-      "ring": "10",
-      "days": "1111100"
-    }
-  ]
-}
+```json
+{ "status": "Rang bell with pattern" }
+```
